@@ -73,9 +73,9 @@ COPY --from=llama-builder /opt/llama-prebuilt /opt/llama-prebuilt
 COPY . /src/llama-dashboard
 WORKDIR /src/llama-dashboard
 
-# Build with prebuilt llama.cpp + ROCm feature
+# Build with prebuilt llama.cpp + ROCm feature (no embedded frontend)
 ENV LLAMA_PREBUILT_DIR=/opt/llama-prebuilt
-RUN cargo build --release -p llama-dashboard --features rocm
+RUN cargo build --release -p llama-dashboard --no-default-features --features rocm
 
 #  Stage 3: Export / Runtime
 FROM rocm/dev-ubuntu-24.04:7.2-complete AS runtime
