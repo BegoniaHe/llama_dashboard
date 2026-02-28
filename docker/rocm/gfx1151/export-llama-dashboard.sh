@@ -26,5 +26,13 @@ if [[ -d /opt/rocm/lib/rocblas ]]; then
     cp -af /opt/rocm/lib/rocblas "${EXPORT_DIR}/lib/"
 fi
 
+#  DEB / RPM packages (built by the packager stage)
+if [[ -d /packages ]] && ls /packages/*.deb /packages/*.rpm 2>/dev/null | head -1 >/dev/null; then
+    mkdir -p "${EXPORT_DIR}/packages"
+    cp -f /packages/*.deb /packages/*.rpm "${EXPORT_DIR}/packages/" 2>/dev/null || true
+    echo "✓ Packages copied to: ${EXPORT_DIR}/packages/"
+    ls -lh "${EXPORT_DIR}/packages/"
+fi
+
 echo "✓ Exported llama-dashboard to: ${EXPORT_DIR}"
 ls -lh "${EXPORT_DIR}/bin/"

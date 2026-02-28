@@ -59,7 +59,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake clang libclang-dev pkg-config \
-        ca-certificates curl nodejs npm \
+        ca-certificates curl gnupg \
+ && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/*
 
 # Install Rust (stable)
@@ -83,7 +85,54 @@ WORKDIR /src/llama-dashboard
 ENV LLAMA_PREBUILT_DIR=/opt/llama-prebuilt
 RUN cargo build --release -p llama-dashboard --no-default-features --features rocm,embed-frontend
 
-#  Stage 3: Export / Runtime
+#  Stage 3: Package builder — creates DEB & RPM from the compiled artifacts
+FROM rocm/dev-ubuntu-24.04:7.2-complete AS packager
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    ROCM_PATH=/opt/rocm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        rpm \
+ && rm -rf /var/lib/apt/lists/*
+
+# Copy the compiled binary
+COPY --from=rust-builder /src/llama-dashboard/target/release/llama-dashboard \
+     /usr/local/bin/llama-dashboard
+
+# Collect ROCm runtime libraries into /staging/lib (same logic as export script)
+RUN mkdir -p /staging/lib \
+ && ldd /usr/local/bin/llama-dashboard 2>/dev/null \
+    | awk '/=> \/opt\/rocm/ { print $3 }' \
+    | sort -u | while read -r lib; do \
+        [ -z "${lib}" ] && continue; \
+        real="$(readlink -f "${lib}" || true)"; \
+        [ -z "${real}" ] || [ ! -f "${real}" ] && continue; \
+        cp -f "${real}" /staging/lib/; \
+        lib_base="$(basename "${lib}")"; \
+        real_base="$(basename "${real}")"; \
+        [ "${lib_base}" != "${real_base}" ] && \
+            ln -sf "${real_base}" "/staging/lib/${lib_base}"; \
+    done \
+ && if [ -d /opt/rocm/lib/rocblas ]; then \
+        cp -af /opt/rocm/lib/rocblas /staging/lib/; \
+    fi
+
+# Copy packaging scripts & templates
+COPY docker/rocm/gfx1151/build-packages.sh      /src/docker/rocm/gfx1151/build-packages.sh
+COPY docker/rocm/gfx1151/packaging/              /src/docker/rocm/gfx1151/packaging/
+RUN chmod +x /src/docker/rocm/gfx1151/build-packages.sh
+
+ARG AMDGPU_TARGETS=gfx1151
+
+# Build the packages
+RUN BINARY=/usr/local/bin/llama-dashboard \
+    LIB_SOURCE=/staging/lib \
+    GPU_TARGET=${AMDGPU_TARGETS} \
+    VERSION=0.1.0 \
+    OUT_DIR=/packages \
+    /src/docker/rocm/gfx1151/build-packages.sh
+
+#  Stage 4: Export / Runtime
 FROM rocm/dev-ubuntu-24.04:7.2-complete AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -93,7 +142,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 COPY --from=rust-builder /src/llama-dashboard/target/release/llama-dashboard \
      /usr/local/bin/llama-dashboard
 
-# Export helper script — copies binary + required ROCm runtime libs
+# Copy the built packages
+COPY --from=packager /packages /packages
+
+# Export helper script — copies binary + required ROCm runtime libs + packages
 COPY docker/rocm/gfx1151/export-llama-dashboard.sh /usr/local/bin/export-llama-dashboard
 RUN chmod +x /usr/local/bin/export-llama-dashboard
 

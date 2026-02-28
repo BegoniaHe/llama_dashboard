@@ -1,0 +1,25 @@
+[Unit]
+Description=llama-dashboard — Local LLM management platform
+Documentation=https://github.com/BegoniaHe/llama_dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/llama-dashboard/env
+ExecStart=/usr/bin/llama-dashboard serve
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/llama-dashboard
+StateDirectory=llama-dashboard
+
+# GPU access
+SupplementaryGroups=video render
+
+[Install]
+WantedBy=multi-user.target
