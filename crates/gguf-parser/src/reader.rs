@@ -259,13 +259,11 @@ fn detect_split_base(filename: &str) -> Option<String> {
 }
 
 fn generate_model_id(path: &Path) -> String {
-    let stem = path
-        .file_stem()
+    path.file_stem()
         .unwrap_or_default()
         .to_string_lossy()
         .to_lowercase()
-        .replace(' ', "-");
-    stem
+        .replace(' ', "-")
 }
 
 //  Binary reading primitives

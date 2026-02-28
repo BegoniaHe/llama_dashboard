@@ -3,6 +3,11 @@
 //! Provides RAII-managed types for model loading, context creation,
 //! sampling, tokenization, and streaming text generation.
 
+// Public API intentionally wraps raw llama.cpp pointers (e.g. *const llama_vocab)
+// in a safe higher-level interface.  The pointers are always valid for the
+// lifetime of the parent RAII object, so suppress the clippy lint.
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 pub mod backend;
 pub mod batch;
 pub mod chat;

@@ -1,6 +1,6 @@
 //! Application configuration — persisted as JSON.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +21,12 @@ pub struct AppConfig {
     /// Default GPU layers (-1 = all).
     #[serde(default = "default_gpu_layers")]
     pub default_n_gpu_layers: i32,
+    /// Maximum concurrently loaded models (0 = unlimited).
+    #[serde(default = "default_max_models")]
+    pub max_models: usize,
+    /// Idle timeout in seconds (0 = disabled).
+    #[serde(default)]
+    pub idle_timeout_secs: u64,
 }
 
 fn default_host() -> String {
@@ -32,6 +38,9 @@ fn default_port() -> u16 {
 fn default_gpu_layers() -> i32 {
     -1
 }
+fn default_max_models() -> usize {
+    4
+}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -42,6 +51,8 @@ impl Default for AppConfig {
             api_key: None,
             default_ctx_size: 0,
             default_n_gpu_layers: default_gpu_layers(),
+            max_models: default_max_models(),
+            idle_timeout_secs: 0,
         }
     }
 }

@@ -15,8 +15,10 @@ pub struct AppState {
 
 struct Inner {
     pub config: AppConfig,
+    #[allow(dead_code)]
     pub db: Database,
     pub model_manager: ModelManager,
+    #[allow(dead_code)]
     pub api_key: Option<String>,
     pub event_tx: broadcast::Sender<String>,
 }
@@ -43,12 +45,14 @@ impl AppState {
     pub fn config(&self) -> &AppConfig {
         &self.inner.config
     }
+    #[allow(dead_code)]
     pub fn db(&self) -> &Database {
         &self.inner.db
     }
     pub fn model_manager(&self) -> &ModelManager {
         &self.inner.model_manager
     }
+    #[allow(dead_code)]
     pub fn api_key(&self) -> Option<&str> {
         self.inner.api_key.as_deref()
     }
@@ -67,5 +71,10 @@ impl AppState {
     /// Subscribe to the event broadcast channel.
     pub fn subscribe_events(&self) -> broadcast::Receiver<String> {
         self.inner.event_tx.subscribe()
+    }
+
+    /// Get a clone of the event broadcast sender (used by idle checker).
+    pub fn event_tx(&self) -> broadcast::Sender<String> {
+        self.inner.event_tx.clone()
     }
 }

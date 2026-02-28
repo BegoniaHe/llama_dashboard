@@ -15,6 +15,7 @@ pub fn router() -> Router<AppState> {
         // Model management
         .route("/api/models", get(list_models))
         .route("/api/models/scan", post(scan_models))
+        .route("/api/models/loaded", get(list_loaded_models))
         .route("/api/models/{id}/details", get(model_details))
         .route("/api/models/{id}/load", post(load_model))
         .route("/api/models/{id}/unload", post(unload_model))
@@ -69,6 +70,7 @@ struct ConfigResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ConfigUpdate {
     model_dirs: Option<Vec<String>>,
     default_ctx_size: Option<u32>,
@@ -82,6 +84,7 @@ struct SystemInfoResponse {
     version: String,
     models_loaded: usize,
     models_available: usize,
+    loaded_models: Vec<crate::services::model_manager::SlotInfo>,
 }
 
 //  Handlers
@@ -89,16 +92,12 @@ struct SystemInfoResponse {
 /// GET /api/models — list all discovered models with status
 async fn list_models(State(state): State<AppState>) -> Json<Vec<ModelEntry>> {
     let available = state.model_manager().scan_available();
-    let loaded_id = state.model_manager().loaded_model_id();
+    let loaded_ids = state.model_manager().loaded_model_ids();
 
     let entries: Vec<ModelEntry> = available
         .into_iter()
         .map(|m| {
-            let status = if loaded_id
-                .as_ref()
-                .map(|lid| lid.eq_ignore_ascii_case(&m.id))
-                .unwrap_or(false)
-            {
+            let status = if loaded_ids.iter().any(|lid| lid.eq_ignore_ascii_case(&m.id)) {
                 "loaded"
             } else {
                 "unloaded"
@@ -139,18 +138,14 @@ async fn model_details(
     Path(id): Path<String>,
 ) -> Result<Json<ModelEntry>, axum::http::StatusCode> {
     let available = state.model_manager().scan_available();
-    let loaded_id = state.model_manager().loaded_model_id();
+    let loaded_ids = state.model_manager().loaded_model_ids();
 
     let m = available
         .into_iter()
         .find(|m| m.id == id)
         .ok_or(axum::http::StatusCode::NOT_FOUND)?;
 
-    let status = if loaded_id
-        .as_ref()
-        .map(|lid| lid.eq_ignore_ascii_case(&m.id))
-        .unwrap_or(false)
-    {
+    let status = if loaded_ids.iter().any(|lid| lid.eq_ignore_ascii_case(&m.id)) {
         "loaded"
     } else {
         "unloaded"
@@ -179,14 +174,16 @@ async fn load_model(
     Path(id): Path<String>,
     Json(req): Json<LoadModelRequest>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    // Find model path
-    let available = state.model_manager().scan_available();
-    let entry = available.into_iter().find(|m| m.id == id).ok_or((
-        axum::http::StatusCode::NOT_FOUND,
-        format!("Model '{}' not found", id),
-    ))?;
+    // If already loaded, just return
+    if state.model_manager().is_loaded(&id) {
+        return Ok(Json(serde_json::json!({ "status": "loaded", "id": id })));
+    }
 
-    let model_path = entry.path.clone();
+    // Find model path by scanning
+    let model_path = state.model_manager().find_model_path(&id).ok_or((
+        axum::http::StatusCode::NOT_FOUND,
+        format!("Model '{}' not found in configured directories", id),
+    ))?;
 
     let model_params = llama_core::ModelParams {
         n_gpu_layers: req.n_gpu_layers,
@@ -223,9 +220,11 @@ async fn unload_model(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Json<serde_json::Value> {
-    state.model_manager().unload();
-    info!(id, "Model unloaded via API");
-    state.broadcast_event("model.unloaded", serde_json::json!({ "id": id }));
+    let was_loaded = state.model_manager().unload(&id);
+    if was_loaded {
+        info!(id, "Model unloaded via API");
+        state.broadcast_event("model.unloaded", serde_json::json!({ "id": id }));
+    }
     Json(serde_json::json!({ "status": "unloaded", "id": id }))
 }
 
@@ -233,6 +232,13 @@ async fn unload_model(
 async fn toggle_favorite(Path(id): Path<String>) -> Json<serde_json::Value> {
     // TODO: persist favorite state in DB
     Json(serde_json::json!({ "id": id, "favorite": true }))
+}
+
+/// GET /api/models/loaded — list all currently loaded models
+async fn list_loaded_models(
+    State(state): State<AppState>,
+) -> Json<Vec<crate::services::model_manager::SlotInfo>> {
+    Json(state.model_manager().slot_info())
 }
 
 /// GET /api/config — get current configuration
@@ -279,16 +285,14 @@ async fn update_config(
 
 /// GET /api/system/info
 async fn system_info(State(state): State<AppState>) -> Json<SystemInfoResponse> {
-    let models_loaded = if state.model_manager().get_loaded().is_some() {
-        1
-    } else {
-        0
-    };
+    let models_loaded = state.model_manager().loaded_count();
     let models_available = state.model_manager().scan_available().len();
+    let loaded_models = state.model_manager().slot_info();
 
     Json(SystemInfoResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
         models_loaded,
         models_available,
+        loaded_models,
     })
 }

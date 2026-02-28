@@ -68,6 +68,14 @@ pub struct ServeArgs {
     /// GPU layers (-1 = all, 0 = CPU only).
     #[arg(long, default_value_t = -1)]
     pub n_gpu_layers: i32,
+
+    /// Maximum number of concurrently loaded models (0 = unlimited).
+    #[arg(long = "models-max", default_value_t = 4, env = "LLAMA_MODELS_MAX")]
+    pub max_models: usize,
+
+    /// Idle timeout in seconds; unload models after this period (0 = disabled).
+    #[arg(long = "idle-timeout", default_value_t = 0, env = "LLAMA_IDLE_TIMEOUT")]
+    pub idle_timeout: u64,
 }
 
 #[derive(Debug, clap::Args, Clone)]

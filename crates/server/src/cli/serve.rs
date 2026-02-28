@@ -8,7 +8,7 @@ use crate::cli::{GlobalArgs, ServeArgs};
 use crate::config::AppConfig;
 use crate::db::Database;
 use crate::routes;
-use crate::services::model_manager::ModelManager;
+use crate::services::model_manager::{ModelManager, ModelManagerConfig, spawn_idle_checker};
 use crate::state::AppState;
 
 pub async fn execute(global: GlobalArgs, serve_args: ServeArgs) -> anyhow::Result<()> {
@@ -24,7 +24,14 @@ pub async fn execute(global: GlobalArgs, serve_args: ServeArgs) -> anyhow::Resul
     } else {
         global.models_dirs.clone()
     };
-    let model_manager = ModelManager::new(model_dirs);
+
+    let mm_config = ModelManagerConfig {
+        max_models: serve_args.max_models,
+        idle_timeout_secs: serve_args.idle_timeout,
+        default_n_gpu_layers: serve_args.n_gpu_layers,
+        default_ctx_size: serve_args.ctx_size,
+    };
+    let model_manager = ModelManager::new(model_dirs, mm_config);
 
     //  Pre-load model if specified
     if let Some(model_path) = &serve_args.model {
@@ -42,7 +49,16 @@ pub async fn execute(global: GlobalArgs, serve_args: ServeArgs) -> anyhow::Resul
     }
 
     //  Shared state
-    let state = AppState::new(cfg.clone(), db, model_manager, global.api_key.clone());
+    let state = AppState::new(
+        cfg.clone(),
+        db,
+        model_manager.clone(),
+        global.api_key.clone(),
+    );
+
+    //  Idle checker background task
+    let shutdown_rx = state.event_tx().subscribe();
+    spawn_idle_checker(model_manager, serve_args.idle_timeout, shutdown_rx);
 
     //  Router
     let cors = CorsLayer::new()
@@ -59,9 +75,6 @@ pub async fn execute(global: GlobalArgs, serve_args: ServeArgs) -> anyhow::Resul
         .merge(routes::spa::router())
         .layer(cors)
         .with_state(state);
-
-    // Wrap with auth middleware if key is set.
-    // (Phase 2: per-route middleware; for now auth is checked in handlers.)
 
     let addr: SocketAddr = format!("{}:{}", global.host, global.port).parse()?;
     info!(%addr, "Starting server");

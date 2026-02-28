@@ -7,7 +7,8 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(dead_code)]
-#![allow(clippy::all)]
+#![allow(unnecessary_transmutes)]
+#![allow(clippy::all, clippy::pedantic, clippy::nursery, clippy::correctness)]
 #![allow(unsafe_op_in_unsafe_fn)]
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));

@@ -36,6 +36,8 @@ async fn main() -> anyhow::Result<()> {
                     model: None,
                     ctx_size: 4096,
                     n_gpu_layers: -1,
+                    max_models: 4,
+                    idle_timeout: 0,
                 },
             )
             .await

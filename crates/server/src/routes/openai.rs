@@ -96,10 +96,11 @@ struct ModelsListResponse {
 async fn list_models(State(state): State<AppState>) -> Json<ModelsListResponse> {
     let mut data = Vec::new();
 
-    // Include loaded model
-    if let Some(loaded) = state.model_manager().get_loaded() {
+    // Include all loaded models
+    let loaded_ids = state.model_manager().loaded_model_ids();
+    for id in &loaded_ids {
         data.push(ModelObject {
-            id: loaded.id.clone(),
+            id: id.clone(),
             object: "model",
             created: 0,
             owned_by: "local",
@@ -108,13 +109,8 @@ async fn list_models(State(state): State<AppState>) -> Json<ModelsListResponse> 
 
     // Also include scanned but not loaded models
     let available = state.model_manager().scan_available();
-    let loaded_id = state.model_manager().loaded_model_id();
     for m in available {
-        if loaded_id
-            .as_deref()
-            .map(|lid| lid.eq_ignore_ascii_case(&m.id))
-            .unwrap_or(false)
-        {
+        if loaded_ids.iter().any(|lid| lid.eq_ignore_ascii_case(&m.id)) {
             continue; // already listed
         }
         data.push(ModelObject {
@@ -133,17 +129,15 @@ async fn list_models(State(state): State<AppState>) -> Json<ModelsListResponse> 
 
 /// GET /v1/models/{model} — Retrieve a single model.
 async fn retrieve_model(State(state): State<AppState>, Path(model_id): Path<String>) -> Response {
-    // Check loaded model
-    if let Some(loaded) = state.model_manager().get_loaded() {
-        if loaded.id.eq_ignore_ascii_case(&model_id) {
-            return Json(ModelObject {
-                id: loaded.id.clone(),
-                object: "model",
-                created: 0,
-                owned_by: "local",
-            })
-            .into_response();
-        }
+    // Check loaded models
+    if let Some(loaded) = state.model_manager().get_loaded(&model_id) {
+        return Json(ModelObject {
+            id: loaded.id.clone(),
+            object: "model",
+            created: 0,
+            owned_by: "local",
+        })
+        .into_response();
     }
 
     // Check scanned models
@@ -170,13 +164,8 @@ async fn retrieve_model(State(state): State<AppState>, Path(model_id): Path<Stri
 
 /// DELETE /v1/models/{model} — Unload a model.
 async fn delete_model(State(state): State<AppState>, Path(model_id): Path<String>) -> Response {
-    let loaded_id = state.model_manager().loaded_model_id();
-    if loaded_id
-        .as_ref()
-        .map(|lid| lid.eq_ignore_ascii_case(&model_id))
-        .unwrap_or(false)
-    {
-        state.model_manager().unload();
+    if state.model_manager().is_loaded(&model_id) {
+        state.model_manager().unload(&model_id);
         state.broadcast_event("model.unloaded", serde_json::json!({ "id": model_id }));
 
         #[derive(Serialize)]
@@ -203,6 +192,7 @@ async fn delete_model(State(state): State<AppState>, Path(model_id): Path<String
 //  /v1/chat/completions
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ChatCompletionRequest {
     #[serde(default)]
     model: Option<String>,
@@ -260,6 +250,7 @@ struct ResponseFormat {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ChatMessageReq {
     role: String,
     #[serde(default)]
@@ -365,6 +356,28 @@ struct ChatDelta {
     content: Option<String>,
 }
 
+/// Resolve the model for a request: try by name, fall back to any loaded.
+#[allow(clippy::result_large_err)]
+fn resolve_model(
+    state: &AppState,
+    model_name: Option<&str>,
+) -> Result<std::sync::Arc<crate::services::model_manager::LoadedModel>, Response> {
+    let mm = state.model_manager();
+    match mm.resolve(model_name) {
+        Some(loaded) => {
+            mm.touch(&loaded.id);
+            Ok(loaded)
+        }
+        None => Err(api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            model_name
+                .map(|n| format!("Model '{}' is not loaded", n))
+                .unwrap_or_else(|| "No model loaded".to_string()),
+            "server_error",
+        )),
+    }
+}
+
 /// POST /v1/chat/completions — Chat completion (stream + non-stream).
 async fn chat_completions(
     State(state): State<AppState>,
@@ -372,15 +385,9 @@ async fn chat_completions(
 ) -> Response {
     let stream = req.stream.unwrap_or(false);
 
-    let loaded = match state.model_manager().get_loaded() {
-        Some(l) => l,
-        None => {
-            return api_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "No model loaded",
-                "server_error",
-            );
-        }
+    let loaded = match resolve_model(&state, req.model.as_deref()) {
+        Ok(l) => l,
+        Err(e) => return e,
     };
 
     let model_id = loaded.id.clone();
@@ -608,6 +615,7 @@ async fn chat_non_stream(
 //  /v1/completions (legacy text completions)
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct CompletionRequest {
     #[serde(default)]
     model: Option<String>,
@@ -715,15 +723,9 @@ async fn completions(
     let stream = req.stream.unwrap_or(false);
     let echo = req.echo.unwrap_or(false);
 
-    let loaded = match state.model_manager().get_loaded() {
-        Some(l) => l,
-        None => {
-            return api_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "No model loaded",
-                "server_error",
-            );
-        }
+    let loaded = match resolve_model(&state, req.model.as_deref()) {
+        Ok(l) => l,
+        Err(e) => return e,
     };
 
     let model_id = loaded.id.clone();
@@ -949,6 +951,7 @@ async fn completion_non_stream(
 //  /v1/embeddings
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct EmbeddingRequest {
     #[serde(default)]
     model: Option<String>,
@@ -962,6 +965,7 @@ struct EmbeddingRequest {
 /// Input can be a string, array of strings, or token array(s).
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
+#[allow(dead_code)]
 enum EmbeddingInput {
     Single(String),
     Multiple(Vec<String>),
@@ -1006,15 +1010,9 @@ struct EmbeddingUsage {
 /// may not produce meaningful embeddings. A dedicated embedding model
 /// (e.g. nomic-embed) is recommended.
 async fn embeddings(State(state): State<AppState>, Json(req): Json<EmbeddingRequest>) -> Response {
-    let loaded = match state.model_manager().get_loaded() {
-        Some(l) => l,
-        None => {
-            return api_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "No model loaded",
-                "server_error",
-            );
-        }
+    let loaded = match resolve_model(&state, req.model.as_deref()) {
+        Ok(l) => l,
+        Err(e) => return e,
     };
 
     let model_id = loaded.id.clone();

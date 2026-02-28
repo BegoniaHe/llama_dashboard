@@ -54,6 +54,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn with_conn<F, T>(&self, f: F) -> T
     where
         F: FnOnce(&Connection) -> T,

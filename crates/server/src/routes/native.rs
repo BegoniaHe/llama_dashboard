@@ -18,6 +18,9 @@ struct TokenizeRequest {
     add_special: bool,
     #[serde(default)]
     parse_special: bool,
+    /// Optional model name. If omitted, uses the most recently used model.
+    #[serde(default)]
+    model: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -32,6 +35,9 @@ struct TokenizeResponse {
 #[derive(Deserialize)]
 struct DetokenizeRequest {
     tokens: Vec<i32>,
+    /// Optional model name. If omitted, uses the most recently used model.
+    #[serde(default)]
+    model: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -45,8 +51,10 @@ async fn tokenize(
 ) -> Result<Json<TokenizeResponse>, axum::http::StatusCode> {
     let loaded = state
         .model_manager()
-        .get_loaded()
+        .resolve(req.model.as_deref())
         .ok_or(axum::http::StatusCode::SERVICE_UNAVAILABLE)?;
+
+    state.model_manager().touch(&loaded.id);
 
     let vocab = loaded.model.vocab();
     let tokens = llama_core::tokenize(vocab, &req.content, req.add_special, req.parse_special)
@@ -61,8 +69,10 @@ async fn detokenize(
 ) -> Result<Json<DetokenizeResponse>, axum::http::StatusCode> {
     let loaded = state
         .model_manager()
-        .get_loaded()
+        .resolve(req.model.as_deref())
         .ok_or(axum::http::StatusCode::SERVICE_UNAVAILABLE)?;
+
+    state.model_manager().touch(&loaded.id);
 
     let vocab = loaded.model.vocab();
     let content = llama_core::detokenize(vocab, &req.tokens)
