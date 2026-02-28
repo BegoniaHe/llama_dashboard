@@ -13,3 +13,6 @@
 [submodule "reference/daisyui"]
 	path = reference/daisyui
 	url = https://github.com/saadeghi/daisyui
+[submodule "reference/ollama"]
+	path = reference/ollama
+	url = https://github.com/ollama/ollama
