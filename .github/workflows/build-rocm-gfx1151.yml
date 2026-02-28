@@ -1,0 +1,113 @@
+name: Build ROCm (gfx1151)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'docker/rocm/gfx1151/**'
+      - '.github/workflows/build-rocm-gfx1151.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'docker/rocm/gfx1151/**'
+  workflow_dispatch:
+    inputs:
+      llama_cpp_ref:
+        description: 'llama.cpp git ref (branch / tag / commit)'
+        default: 'master'
+        required: false
+
+env:
+  AMDGPU_TARGET: gfx1151
+  LLAMA_CPP_REF: ${{ github.event.inputs.llama_cpp_ref || 'master' }}
+
+jobs:
+  build:
+    name: Docker build (ROCm gfx1151)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── Docker layer cache (GitHub Actions cache backend) ──
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: rocm-gfx1151-${{ hashFiles('docker/rocm/gfx1151/Dockerfile', 'Cargo.lock') }}
+          restore-keys: |
+            rocm-gfx1151-
+
+      # ── Build the multi-stage Dockerfile ──
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/rocm/gfx1151/Dockerfile
+          build-args: |
+            LLAMA_CPP_REF=${{ env.LLAMA_CPP_REF }}
+            AMDGPU_TARGETS=${{ env.AMDGPU_TARGET }}
+          tags: llama-dashboard-rocm-gfx1151:latest
+          load: true                  # load into local docker daemon
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      # ── Export artifacts from container ──
+      - name: Export binary and ROCm libs
+        run: |
+          mkdir -p ${{ github.workspace }}/artifact
+          docker run --rm \
+            -v ${{ github.workspace }}/artifact:/export \
+            llama-dashboard-rocm-gfx1151:latest /export
+
+      - name: List exported files
+        run: |
+          echo "=== bin ===" && ls -lh artifact/bin/ || true
+          echo "=== lib ===" && ls -lh artifact/lib/ | head -30 || true
+
+      # ── Upload as GitHub Actions artifact ──
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-dashboard-rocm-gfx1151
+          path: artifact/
+          retention-days: 30
+
+      # ── Rotate Buildx cache ──
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+  # ── Optional: create GitHub Release when tagged ──
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: llama-dashboard-rocm-gfx1151
+          path: dist/
+
+      - name: Package tarball
+        run: |
+          tar czf llama-dashboard-rocm-gfx1151.tar.gz -C dist .
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: llama-dashboard-rocm-gfx1151.tar.gz
+          generate_release_notes: true

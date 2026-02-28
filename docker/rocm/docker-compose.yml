@@ -1,0 +1,32 @@
+# docker compose -f docker/rocm/docker-compose.yml build
+# docker compose -f docker/rocm/docker-compose.yml up
+#
+# Override architecture:
+#   AMDGPU_TARGETS=gfx1100 docker compose -f docker/rocm/docker-compose.yml build --build-arg DOCKERFILE=docker/rocm/gfx1100/Dockerfile
+#
+# Default target: gfx1151
+
+services:
+  llama-dashboard-rocm-gfx1151:
+    build:
+      context: ../..                        # workspace root
+      dockerfile: docker/rocm/gfx1151/Dockerfile
+      args:
+        LLAMA_CPP_REF:  ${LLAMA_CPP_REF:-master}
+        AMDGPU_TARGETS: gfx1151
+    image: llama-dashboard-rocm-gfx1151:latest
+
+    volumes:
+      - type: bind
+        source: ${LLAMA_EXPORT_DIR:-../../target/rocm/gfx1151}
+        target: /export
+        bind:
+          create_host_path: true
+
+    environment:
+      - LLAMA_EXPORT_DIR=/export
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+
+    # One-shot: export binary + libs then exit
+    command: ["/export"]
+    restart: "no"
