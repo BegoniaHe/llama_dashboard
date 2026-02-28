@@ -1,0 +1,11 @@
+[package]
+name = "gguf-parser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pure Rust GGUF file format parser"
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
