@@ -1,0 +1,17 @@
+[package]
+name = "llama-sys"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Raw FFI bindings to llama.cpp C API"
+links = "llama"
+
+[features]
+default = []
+cuda = []
+vulkan = []
+rocm = []
+
+[build-dependencies]
+cmake = "0.1"
+bindgen = "0.71"
