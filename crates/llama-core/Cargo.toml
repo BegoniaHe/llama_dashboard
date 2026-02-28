@@ -1,0 +1,19 @@
+[package]
+name = "llama-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Safe Rust wrapper around llama.cpp C API"
+
+[features]
+default = []
+cuda = ["llama-sys/cuda"]
+vulkan = ["llama-sys/vulkan"]
+rocm = ["llama-sys/rocm"]
+
+[dependencies]
+llama-sys = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt"] }
