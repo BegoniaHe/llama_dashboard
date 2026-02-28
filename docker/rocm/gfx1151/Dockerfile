@@ -36,6 +36,7 @@ RUN cmake -S /src/llama.cpp -B /build/llama.cpp \
       -DCMAKE_HIP_FLAGS="--rocm-path=/opt/rocm" \
       -DCMAKE_BUILD_TYPE=Release \
       -DBUILD_SHARED_LIBS=OFF \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
       -DLLAMA_BUILD_SERVER=OFF \
       -DLLAMA_BUILD_TESTS=OFF \
       -DLLAMA_BUILD_EXAMPLES=OFF \
@@ -88,38 +89,7 @@ COPY --from=rust-builder /src/llama-dashboard/target/release/llama-dashboard \
      /usr/local/bin/llama-dashboard
 
 # Export helper script — copies binary + required ROCm runtime libs
-RUN cat > /usr/local/bin/export-llama-dashboard <<'SCRIPT'
-#!/usr/bin/env bash
-set -euo pipefail
-
-EXPORT_DIR="${1:-${LLAMA_EXPORT_DIR:-/export}}"
-mkdir -p "${EXPORT_DIR}/bin" "${EXPORT_DIR}/lib"
-
-#  Binary
-cp -f /usr/local/bin/llama-dashboard "${EXPORT_DIR}/bin/"
-
-#  ROCm shared libraries required at runtime
-ldd /usr/local/bin/llama-dashboard 2>/dev/null \
-  | awk '/=> \/opt\/rocm/ { print $3 }' \
-  | sort -u | while read -r lib; do
-    [[ -z "${lib}" ]] && continue
-    real="$(readlink -f "${lib}" || true)"
-    [[ -z "${real}" || ! -f "${real}" ]] && continue
-    cp -f "${real}" "${EXPORT_DIR}/lib/"
-    lib_base="$(basename "${lib}")"
-    real_base="$(basename "${real}")"
-    [[ "${lib_base}" != "${real_base}" ]] && \
-        ln -sf "${real_base}" "${EXPORT_DIR}/lib/${lib_base}"
-done
-
-# rocBLAS kernel objects (required by rocblas at runtime)
-if [[ -d /opt/rocm/lib/rocblas ]]; then
-    cp -af /opt/rocm/lib/rocblas "${EXPORT_DIR}/lib/"
-fi
-
-echo "✓ Exported llama-dashboard to: ${EXPORT_DIR}"
-ls -lh "${EXPORT_DIR}/bin/"
-SCRIPT
+COPY docker/rocm/gfx1151/export-llama-dashboard.sh /usr/local/bin/export-llama-dashboard
 RUN chmod +x /usr/local/bin/export-llama-dashboard
 
 # gfx1151 is not in ROCm's official support matrix → override

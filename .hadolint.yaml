@@ -1,0 +1,5 @@
+# hadolint configuration
+# https://github.com/hadolint/hadolint#configure
+ignored:
+  - DL3008   # Pin versions in apt-get install (not practical for ROCm base images)
+  - DL4006   # Set SHELL option -o pipefail (base image uses bash)
