@@ -45,15 +45,19 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
 tokio-stream = "0.1"
 
-# Frontend embedding
-rust-embed = { version = "8", features = ["compression"] }
-mime_guess = "2"
+# Frontend embedding (optional – only needed when frontend/dist exists)
+rust-embed = { version = "8", features = ["compression"], optional = true }
+mime_guess = { version = "2", optional = true }
 
 # WebSocket
 futures-util = "0.3"
 
 [features]
-default = []
+default = ["embed-frontend"]
+embed-frontend = ["rust-embed", "mime_guess"]
 cuda = ["llama-core/cuda"]
 vulkan = ["llama-core/vulkan"]
 rocm = ["llama-core/rocm"]
+
+[lints.rust]
+unexpected_cfgs = "allow"
