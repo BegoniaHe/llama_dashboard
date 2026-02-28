@@ -1,0 +1,59 @@
+[package]
+name = "llama-dashboard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Local LLM management platform powered by llama.cpp"
+
+[[bin]]
+name = "llama-dashboard"
+path = "src/main.rs"
+
+[dependencies]
+llama-core = { workspace = true }
+gguf-parser = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Web framework
+axum = { version = "0.8", features = ["ws"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Utilities
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6"
+tokio-stream = "0.1"
+
+# Frontend embedding
+rust-embed = { version = "8", features = ["compression"] }
+mime_guess = "2"
+
+# WebSocket
+futures-util = "0.3"
+
+[features]
+default = []
+cuda = ["llama-core/cuda"]
+vulkan = ["llama-core/vulkan"]
+rocm = ["llama-core/rocm"]
