@@ -1,0 +1,15 @@
+[submodule "reference/LlamacppServer"]
+	path = reference/LlamacppServer
+	url = https://github.com/IIIIIllllIIIIIlllll/LlamacppServer
+[submodule "reference/llama.cpp"]
+	path = reference/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp
+[submodule "reference/openai-api"]
+	path = reference/openai-api
+	url = https://github.com/openai-rs/openai-api
+[submodule "reference/tailadmin-free-tailwind-dashboard-template"]
+	path = reference/tailadmin-free-tailwind-dashboard-template
+	url = https://github.com/TailAdmin/tailadmin-free-tailwind-dashboard-template
+[submodule "reference/daisyui"]
+	path = reference/daisyui
+	url = https://github.com/saadeghi/daisyui

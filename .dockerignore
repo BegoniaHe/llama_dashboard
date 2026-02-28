@@ -1,0 +1,20 @@
+# Rust build output
+target/
+
+# llama.cpp source tree (cloned fresh inside Docker)
+reference/
+
+# Test fixtures (large GGUF files)
+tests/gguf/
+
+# Git metadata
+.git/
+
+# Frontend node_modules (rebuilt inside Docker if needed)
+frontend/node_modules/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
