@@ -1,0 +1,227 @@
+name: Build & Pre-release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'frontend/**'
+      - 'docker/**'
+      - '.github/workflows/build-and-prerelease.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'frontend/**'
+      - 'docker/**'
+  workflow_dispatch:
+    inputs:
+      llama_cpp_ref:
+        description: 'llama.cpp git ref (branch / tag / commit)'
+        default: 'master'
+        required: false
+
+env:
+  LLAMA_CPP_REF: ${{ github.event.inputs.llama_cpp_ref || 'master' }}
+
+# ──────────────────────────────────────────────────────────────────────────────
+jobs:
+
+# ── Build ROCm (gfx1151) ──────────────────────────────────────────────────────
+  build-rocm:
+    name: Build (ROCm gfx1151)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers (ROCm)
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache-rocm
+          key: rocm-gfx1151-${{ hashFiles('docker/rocm/gfx1151/Dockerfile', 'Cargo.lock', 'frontend/package-lock.json') }}
+          restore-keys: |
+            rocm-gfx1151-
+
+      - name: Build Docker image (ROCm)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/rocm/gfx1151/Dockerfile
+          build-args: |
+            LLAMA_CPP_REF=${{ env.LLAMA_CPP_REF }}
+            AMDGPU_TARGETS=gfx1151
+          tags: llama-dashboard-rocm-gfx1151:latest
+          load: true
+          cache-from: type=local,src=/tmp/.buildx-cache-rocm
+          cache-to: type=local,dest=/tmp/.buildx-cache-rocm-new,mode=max
+
+      - name: Export artifacts (ROCm)
+        run: |
+          mkdir -p ${{ github.workspace }}/artifact-rocm
+          docker run --rm \
+            -v ${{ github.workspace }}/artifact-rocm:/export \
+            llama-dashboard-rocm-gfx1151:latest /export
+
+      - name: List exported files (ROCm)
+        run: |
+          echo "=== bin ===" && ls -lh artifact-rocm/bin/ || true
+          echo "=== lib ===" && ls -lh artifact-rocm/lib/ | head -20 || true
+          echo "=== packages ===" && ls -lh artifact-rocm/packages/ || true
+
+      - name: Upload artifact (ROCm)
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-dashboard-rocm-gfx1151
+          path: artifact-rocm/
+          retention-days: 7
+
+      - name: Rotate Buildx cache (ROCm)
+        run: |
+          rm -rf /tmp/.buildx-cache-rocm
+          mv /tmp/.buildx-cache-rocm-new /tmp/.buildx-cache-rocm
+
+# ── Build CPU ─────────────────────────────────────────────────────────────────
+  build-cpu:
+    name: Build (CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers (CPU)
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache-cpu
+          key: cpu-${{ hashFiles('docker/cpu/Dockerfile', 'Cargo.lock', 'frontend/package-lock.json') }}
+          restore-keys: |
+            cpu-
+
+      - name: Build Docker image (CPU)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/cpu/Dockerfile
+          build-args: |
+            LLAMA_CPP_REF=${{ env.LLAMA_CPP_REF }}
+          tags: llama-dashboard-cpu:latest
+          load: true
+          cache-from: type=local,src=/tmp/.buildx-cache-cpu
+          cache-to: type=local,dest=/tmp/.buildx-cache-cpu-new,mode=max
+
+      - name: Export artifacts (CPU)
+        run: |
+          mkdir -p ${{ github.workspace }}/artifact-cpu
+          docker run --rm \
+            -v ${{ github.workspace }}/artifact-cpu:/export \
+            llama-dashboard-cpu:latest /export
+
+      - name: List exported files (CPU)
+        run: |
+          echo "=== bin ===" && ls -lh artifact-cpu/bin/ || true
+          echo "=== packages ===" && ls -lh artifact-cpu/packages/ || true
+
+      - name: Upload artifact (CPU)
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-dashboard-cpu
+          path: artifact-cpu/
+          retention-days: 7
+
+      - name: Rotate Buildx cache (CPU)
+        run: |
+          rm -rf /tmp/.buildx-cache-cpu
+          mv /tmp/.buildx-cache-cpu-new /tmp/.buildx-cache-cpu
+
+# ── Pre-release ───────────────────────────────────────────────────────────────
+  prerelease:
+    name: Publish pre-release
+    needs: [build-rocm, build-cpu]
+    # Only run on push to main or manual dispatch — skip for PRs
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout (for gh CLI context)
+        uses: actions/checkout@v4
+
+      - name: Download ROCm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: llama-dashboard-rocm-gfx1151
+          path: dist/rocm-gfx1151/
+
+      - name: Download CPU artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: llama-dashboard-cpu
+          path: dist/cpu/
+
+      - name: Generate timestamp tag
+        id: tag
+        run: |
+          TS=$(date -u +%Y%m%d-%H%M%S)
+          echo "tag=pre-${TS}" >> "$GITHUB_OUTPUT"
+          echo "title=Pre-release ${TS}" >> "$GITHUB_OUTPUT"
+
+      - name: Package release tarballs
+        run: |
+          tar czf llama-dashboard-rocm-gfx1151-${{ steps.tag.outputs.tag }}.tar.gz \
+            -C dist/rocm-gfx1151 .
+          tar czf llama-dashboard-cpu-${{ steps.tag.outputs.tag }}.tar.gz \
+            -C dist/cpu .
+
+          # Collect individual DEB / RPM packages for direct download
+          mkdir -p release-pkgs
+          find dist/rocm-gfx1151/packages dist/cpu/packages \
+            -maxdepth 1 \( -name '*.deb' -o -name '*.rpm' \) \
+            -exec cp {} release-pkgs/ \; 2>/dev/null || true
+
+      - name: Delete existing pre-releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # List all existing pre-release tags and delete them (release + git tag)
+          EXISTING=$(gh release list \
+            --json tagName,isPrerelease \
+            --jq '[.[] | select(.isPrerelease) | .tagName] | .[]' \
+            2>/dev/null || true)
+
+          if [[ -n "${EXISTING}" ]]; then
+            echo "Found existing pre-releases:"
+            echo "${EXISTING}"
+            while IFS= read -r tag; do
+              [[ -z "${tag}" ]] && continue
+              echo "Deleting pre-release: ${tag}"
+              gh release delete "${tag}" --yes --cleanup-tag || true
+            done <<< "${EXISTING}"
+          else
+            echo "No existing pre-releases found."
+          fi
+
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Enumerate individual packages (may be empty on first run)
+          PKGS=$(ls release-pkgs/*.deb release-pkgs/*.rpm 2>/dev/null || true)
+
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --prerelease \
+            --title "${{ steps.tag.outputs.title }}" \
+            --generate-notes \
+            llama-dashboard-rocm-gfx1151-${{ steps.tag.outputs.tag }}.tar.gz \
+            llama-dashboard-cpu-${{ steps.tag.outputs.tag }}.tar.gz \
+            ${PKGS}
