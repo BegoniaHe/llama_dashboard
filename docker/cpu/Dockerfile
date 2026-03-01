@@ -100,22 +100,11 @@ RUN chmod +x /src/docker/cpu/build-packages.sh \
     OUT_DIR=/packages \
     /src/docker/cpu/build-packages.sh
 
-#  Stage 4: Export / Runtime
-FROM ubuntu:24.04 AS runtime
+#  Stage 4: Minimal artifact export layer
+#  FROM scratch means type=local exports ONLY what is COPY'd here.
+FROM scratch AS artifacts
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Copy the compiled binary
-COPY --from=rust-builder /src/llama-dashboard/target/release/llama-dashboard \
-     /usr/local/bin/llama-dashboard
-
-# Copy the built packages
-COPY --from=packager /packages /packages
-
-# Export helper script
-COPY docker/cpu/export-llama-dashboard.sh /usr/local/bin/export-llama-dashboard
-RUN chmod +x /usr/local/bin/export-llama-dashboard
-
-# Default: export artifacts to /export (bind-mount from host)
-ENTRYPOINT ["/usr/local/bin/export-llama-dashboard"]
-CMD ["/export"]
+COPY --from=rust-builder \
+     /src/llama-dashboard/target/release/llama-dashboard \
+     /bin/llama-dashboard
+COPY --from=packager /packages/ /packages/

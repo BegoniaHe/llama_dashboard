@@ -132,26 +132,12 @@ RUN BINARY=/usr/local/bin/llama-dashboard \
     OUT_DIR=/packages \
     /src/docker/rocm/gfx1151/build-packages.sh
 
-#  Stage 4: Export / Runtime
-FROM rocm/dev-ubuntu-24.04:7.2-complete AS runtime
+#  Stage 4: Minimal artifact export layer
+#  FROM scratch means type=local exports ONLY what is COPY'd here —
+#  none of the multi-GB ROCm base image layers are included.
+FROM scratch AS artifacts
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    ROCM_PATH=/opt/rocm
-
-# Copy the compiled binary
-COPY --from=rust-builder /src/llama-dashboard/target/release/llama-dashboard \
-     /usr/local/bin/llama-dashboard
-
-# Copy the built packages
-COPY --from=packager /packages /packages
-
-# Export helper script — copies binary + required ROCm runtime libs + packages
-COPY docker/rocm/gfx1151/export-llama-dashboard.sh /usr/local/bin/export-llama-dashboard
-RUN chmod +x /usr/local/bin/export-llama-dashboard
-
-# gfx1151 is not in ROCm's official support matrix → override
-ENV HSA_OVERRIDE_GFX_VERSION=11.0.0
-
-# Default: export artifacts to /export (bind-mount from host)
-ENTRYPOINT ["/usr/local/bin/export-llama-dashboard"]
-CMD ["/export"]
+COPY --from=rust-builder \
+     /src/llama-dashboard/target/release/llama-dashboard \
+     /bin/llama-dashboard
+COPY --from=packager /packages/ /packages/

@@ -48,9 +48,8 @@ jobs:
           restore-keys: |
             rocm-gfx1151-
 
-      # Export only the runtime stage filesystem — no need to load the full
-      # 7+ GB ROCm image into the Docker daemon. type=local writes the target
-      # stage's file tree directly to the host.
+      # targets the scratch-based 'artifacts' stage so type=local only
+      # exports the binary + packages, not the entire ROCm base image.
       - name: Build and export (ROCm)
         uses: docker/build-push-action@v6
         with:
@@ -59,7 +58,7 @@ jobs:
           build-args: |
             LLAMA_CPP_REF=${{ env.LLAMA_CPP_REF }}
             AMDGPU_TARGETS=gfx1151
-          target: runtime
+          target: artifacts
           outputs: type=local,dest=${{ github.workspace }}/artifact-rocm-fs
           cache-from: type=local,src=/tmp/.buildx-cache-rocm
           cache-to: type=local,dest=/tmp/.buildx-cache-rocm-new,mode=max
@@ -67,11 +66,10 @@ jobs:
       - name: Collect artifacts (ROCm)
         run: |
           mkdir -p artifact-rocm/bin artifact-rocm/packages
-          cp artifact-rocm-fs/usr/local/bin/llama-dashboard artifact-rocm/bin/
-          if ls artifact-rocm-fs/packages/*.deb artifact-rocm-fs/packages/*.rpm 2>/dev/null | head -1 >/dev/null; then
-            cp artifact-rocm-fs/packages/*.deb artifact-rocm-fs/packages/*.rpm \
-               artifact-rocm/packages/ 2>/dev/null || true
-          fi
+          cp artifact-rocm-fs/bin/llama-dashboard artifact-rocm/bin/
+          find artifact-rocm-fs/packages \
+            -maxdepth 1 \( -name '*.deb' -o -name '*.rpm' \) \
+            -exec cp {} artifact-rocm/packages/ \; 2>/dev/null || true
           echo "=== bin ==="   && ls -lh artifact-rocm/bin/
           echo "=== packages ===" && ls -lh artifact-rocm/packages/ || true
 
@@ -115,7 +113,7 @@ jobs:
           file: docker/cpu/Dockerfile
           build-args: |
             LLAMA_CPP_REF=${{ env.LLAMA_CPP_REF }}
-          target: runtime
+          target: artifacts
           outputs: type=local,dest=${{ github.workspace }}/artifact-cpu-fs
           cache-from: type=local,src=/tmp/.buildx-cache-cpu
           cache-to: type=local,dest=/tmp/.buildx-cache-cpu-new,mode=max
@@ -123,11 +121,10 @@ jobs:
       - name: Collect artifacts (CPU)
         run: |
           mkdir -p artifact-cpu/bin artifact-cpu/packages
-          cp artifact-cpu-fs/usr/local/bin/llama-dashboard artifact-cpu/bin/
-          if ls artifact-cpu-fs/packages/*.deb artifact-cpu-fs/packages/*.rpm 2>/dev/null | head -1 >/dev/null; then
-            cp artifact-cpu-fs/packages/*.deb artifact-cpu-fs/packages/*.rpm \
-               artifact-cpu/packages/ 2>/dev/null || true
-          fi
+          cp artifact-cpu-fs/bin/llama-dashboard artifact-cpu/bin/
+          find artifact-cpu-fs/packages \
+            -maxdepth 1 \( -name '*.deb' -o -name '*.rpm' \) \
+            -exec cp {} artifact-cpu/packages/ \; 2>/dev/null || true
           echo "=== bin ==="   && ls -lh artifact-cpu/bin/
           echo "=== packages ===" && ls -lh artifact-cpu/packages/ || true
 
