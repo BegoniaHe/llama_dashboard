@@ -178,8 +178,14 @@ jobs:
 
       - name: Package release tarballs
         run: |
+          # ROCm: exclude lib/ — the raw .so files are several GB and already
+          # bundled inside the .deb / .rpm. Only ship bin/ + packages/.
           tar czf llama-dashboard-rocm-gfx1151-${{ steps.tag.outputs.tag }}.tar.gz \
-            -C dist/rocm-gfx1151 .
+            -C dist/rocm-gfx1151 \
+            --exclude='./lib' \
+            .
+
+          # CPU: no lib/ to worry about (statically linked / system libc only)
           tar czf llama-dashboard-cpu-${{ steps.tag.outputs.tag }}.tar.gz \
             -C dist/cpu .
 
