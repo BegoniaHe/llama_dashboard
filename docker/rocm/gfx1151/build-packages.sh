@@ -166,6 +166,8 @@ build_rpm() {
 
     # Spec file — %install copies from the staging directory
     cat > "${rpmbuild_dir}/SPECS/${PKG_NAME}.spec" <<SPEC
+%define __strip /bin/true
+
 Name:           ${PKG_NAME}
 Version:        ${VERSION}
 Release:        1
